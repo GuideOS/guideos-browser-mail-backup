@@ -1,0 +1,230 @@
+#!/bin/bash
+
+# ----------------------------------------------------------------------------
+# ⚠️ Hinweis für Entwickler:
+# 
+# Das Backup-Tool wurde von evilware666 für GuideOS entwickelt 
+# und ist Open Source. 
+# Mehr Infos zu GuideOS findet man unter: https://guideos.de/
+#
+# Dieses Skript dient dazu, das Profil eines Benutzers von verschiedenen Browsern
+# wie Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird
+# zu sichern und bei Bedarf wiederherzustellen. Es kann optional verschlüsselt werden.
+# ----------------------------------------------------------------------------
+
+# ⚠️ Hinweis zu Beginn des Tools
+zenity --info --text="                 Willkommen zum Browser und Mail Backup-Tool\n\nMit diesem Tool kannst du die Profil-Ordner von Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird sichern und bei Bedarf wiederherstellen. Die Sicherung kann optional verschlüsselt werden, um deine Daten zu schützen." --title="Browser-Backup-Tool"
+
+# ⚠️ Hinweis zu Beginn des Tools
+zenity --info --text="⚠️ ACHTUNG ⚠️ Alle betreffenden Programme MÜSSEN geschlossen sein, da es sonst zu Problemen bei der Sicherung/Wiederherstellung kommen kann!" --title="Browser und Mail Backup-Tool"
+
+# Auswahl der Aktion
+ACTION=$(zenity --list --title="Browser und Mail Backup-Tool" --radiolist \
+    --column="Wählen" --column="Aktion" \
+    TRUE "Sichern" \
+    FALSE "Wiederherstellen" \
+    --height=250 --width=400)
+
+if [ $? -ne 0 ]; then
+    exit 0
+fi
+
+# Verschlüsselungsauswahl nur bei "Sichern"
+USE_ENCRYPTION=false
+if [ "$ACTION" == "Sichern" ]; then
+    ENCRYPTION_OPTION=$(zenity --list --radiolist --title="Verschlüsselung wählen" \
+        --text="Möchtest du das Backup verschlüsseln?" \
+        --column="Auswahl" --column="Option" \
+        TRUE "Ja" \
+        FALSE "Nein" \
+        --height=250 --width=400)
+
+    if [ "$ENCRYPTION_OPTION" == "Ja" ]; then
+        USE_ENCRYPTION=true
+    fi
+fi
+
+while true; do
+    # Auswahl der Profile
+    if [ "$ACTION" == "Wiederherstellen" ]; then
+        PROFILE_SELECTION=$(zenity --list --radiolist \
+            --title="Profil Auswahl" \
+            --text="Wähle die Sicherung, die du wiederherstellen möchtest:" \
+            --column="Auswahl" --column="Profil" \
+            TRUE "Firefox" \
+            FALSE "Chromium" \
+            FALSE "Vivaldi" \
+            FALSE "LibreWolf" \
+            FALSE "Google Chrome" \
+            FALSE "Brave" \
+            FALSE "Thunderbird" \
+            --height=350 --width=500)
+        
+        if [ $? -ne 0 ]; then
+            exit 0
+        fi
+
+        # ACHTUNG Hinweis für bestehende Ordner
+        zenity --warning --text="ACHTUNG: Beim Wiederherstellen werden eventuell bestehende Profil-Ordner überschrieben" --title="⚠️ Achtung ⚠️"
+    else
+        PROFILE_SELECTION=$(zenity --list --radiolist \
+            --title="Profil Auswahl" \
+            --text="Wähle das Profil, das gesichert werden soll:" \
+            --column="Auswahl" --column="Profil" \
+            TRUE "Firefox" \
+            FALSE "Chromium" \
+            FALSE "Vivaldi" \
+            FALSE "LibreWolf" \
+            FALSE "Google Chrome" \
+            FALSE "Brave" \
+            FALSE "Thunderbird" \
+            --height=350 --width=500)
+    fi
+
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+    if [ -z "$PROFILE_SELECTION" ]; then
+        zenity --error --text="⚠️ Kein Profil ausgewählt. Skript abgebrochen." --title="Fehler"
+        exit 1
+    fi
+
+    show_progress() {
+        ( while true; do echo 50; sleep 1; done ) | zenity --progress --pulsate --auto-close --title="Bitte warten..." &
+        PROGRESS_PID=$!
+    }
+
+    stop_progress() {
+        if ps -p $PROGRESS_PID > /dev/null; then
+            kill $PROGRESS_PID
+        fi
+    }
+
+    if [ "$ACTION" == "Sichern" ]; then
+        BACKUP_DIR=$(zenity --file-selection --directory --title="Zielordner für das Backup auswählen")
+        if [ -n "$BACKUP_DIR" ]; then
+            show_progress
+            DATE=$(date +%Y-%m-%d_%H-%M-%S)
+
+            # Da nur ein Profil ausgewählt werden kann, entfällt die Schleife
+            PROFILE="$PROFILE_SELECTION"
+            BACKUP_NAME="$BACKUP_DIR/${PROFILE}_backup_${DATE}.tar.gz"
+
+            PROFILES=""
+            if [ "$PROFILE" == "Firefox" ]; then
+                if [ -d "$HOME/.mozilla" ]; then
+                    PROFILES+=".mozilla "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Firefox-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "Chromium" ]; then
+                if [ -d "$HOME/.config/chromium" ]; then
+                    PROFILES+=".config/chromium "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Chromium-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "Vivaldi" ]; then
+                if [ -d "$HOME/.config/vivaldi" ]; then
+                    PROFILES+=".config/vivaldi "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Vivaldi-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "LibreWolf" ]; then
+                if [ -d "$HOME/.librewolf" ]; then
+                    PROFILES+=".librewolf "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das LibreWolf-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "Google Chrome" ]; then
+                if [ -d "$HOME/.config/google-chrome" ]; then
+                    PROFILES+=".config/google-chrome "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Google Chrome-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "Brave" ]; then
+                if [ -d "$HOME/.config/BraveSoftware" ]; then
+                    PROFILES+=".config/BraveSoftware "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Brave-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+            if [ "$PROFILE" == "Thunderbird" ]; then
+                if [ -d "$HOME/.thunderbird" ]; then
+                    PROFILES+=".thunderbird "
+                else
+                    stop_progress
+                    zenity --error --text="⚠️ Das Thunderbird-Profil wurde nicht gefunden." --title="Fehler"
+                    exit 1
+                fi
+            fi
+
+            tar -czf "$BACKUP_NAME" -C "$HOME" $PROFILES
+            if [ $? -eq 0 ]; then
+                if [ "$USE_ENCRYPTION" == "true" ]; then
+                    PASSWORD=$(zenity --password --title="Passwort für die Verschlüsselung eingeben")
+                    echo "$PASSWORD" | gpg --batch --yes --passphrase-fd 0 -c "$BACKUP_NAME"
+                    if [ $? -eq 0 ]; then
+                        rm -f "$BACKUP_NAME"
+                        BACKUP_NAME+=".gpg"
+                    else
+                        stop_progress
+                        zenity --error --text="⚠️ Fehler bei der Verschlüsselung." --title="Fehler"
+                        exit 1
+                    fi
+                fi
+                stop_progress
+                zenity --info --text="Das Profil wurde erfolgreich gesichert: $BACKUP_NAME" --title="Sicherung abgeschlossen"
+            else
+                stop_progress
+                zenity --error --text="⚠️ Fehler beim Sichern des Profils." --title="Fehler"
+                exit 1
+            fi
+        else
+            zenity --error --text="⚠️ Kein Zielordner ausgewählt. Sicherung abgebrochen." --title="Fehler"
+            exit 1
+        fi
+    elif [ "$ACTION" == "Wiederherstellen" ]; then
+        BACKUP_FILE=$(zenity --file-selection --title="Backup auswählen")
+        if [ -f "$BACKUP_FILE" ]; then
+            show_progress
+            if [[ "$BACKUP_FILE" == *.gpg ]]; then
+                PASSWORD=$(zenity --password --title="Passwort für die Entschlüsselung eingeben")
+                echo "$PASSWORD" | gpg --batch --yes --passphrase-fd 0 -d "$BACKUP_FILE" > "${BACKUP_FILE%.gpg}"
+                BACKUP_FILE="${BACKUP_FILE%.gpg}"
+            fi
+
+            tar -xzf "$BACKUP_FILE" -C "$HOME"
+            if [ $? -eq 0 ]; then
+                rm -f "$BACKUP_FILE"  # Sicherstellen, dass die entschlüsselte Datei gelöscht wird
+                stop_progress
+                zenity --info --text="Die Wiederherstellung war erfolgreich!" --title="Wiederherstellung abgeschlossen"
+            else
+                stop_progress
+                zenity --error --text="⚠️ Fehler bei der Wiederherstellung des Profils." --title="Fehler"
+                exit 1
+            fi
+        else
+            zenity --error --text="⚠️ Die ausgewählte Sicherung konnte nicht gefunden werden." --title="Fehler"
+            exit 1
+        fi
+    fi
+    break
+done
+
