@@ -9,6 +9,8 @@ Homepage: https://guideos.de
 Package: guideos-browser-mail-backup
 Architecture: all
 Depends: ${misc:Depends}, bash, zenity
+Conflicts: guideos-firefox-backup
+Replaces: guideos-firefox-backup
 Description: A simple tool to backup popular browsers and mail clients
   This Tool is a simple bash script to backup your Firefox profile. 
   It creates a .tar.gz archive of your profile and saves it to a location of your choice.
