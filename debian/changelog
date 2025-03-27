@@ -1,3 +1,10 @@
+guideos-browser-mail-backup (0.0.3) unstable; urgency=medium
+
+  * Fixed: Displayed Name
+  * Fixed: Icon Color
+
+ -- Actionschnitzel <actionschnitzel@guideos.de>  Thu, 27 Mar 2025 19:49:16 +0100
+
 guideos-browser-mail-backup (0.0.2) unstable; urgency=medium
 
   * Replaces guideos-firefox-backup
