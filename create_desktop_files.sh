@@ -7,7 +7,7 @@ mkdir -p debian/guideos-browser-mail-backup/usr/share/applications
 cat > debian/guideos-browser-mail-backup/usr/share/applications/guideos-browser-mail-backup.desktop <<EOL
 [Desktop Entry]
 Version=1.0
-Name=Browser & Mail Backup
+Name=GuideOS Browser & Mail Backup
 Comment=Sichern und Wiederherstellung von Browser-Profilen und Mail-Daten
 GenericName=Browser Mail Backup
 Exec=guideos-browser-mail-backup
