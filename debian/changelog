@@ -1,3 +1,9 @@
+guideos-browser-mail-backup (0.0.4) unstable; urgency=medium
+
+  * Changed Icons
+
+ -- Actionschnitzel <actionschnitzel@guideos.de>  Sun, 04 May 2025 17:09:06 +0200
+
 guideos-browser-mail-backup (0.0.3) unstable; urgency=medium
 
   * Fixed: Displayed Name
