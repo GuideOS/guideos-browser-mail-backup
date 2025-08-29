@@ -1,3 +1,16 @@
+guideos-browser-mail-backup (1.1) unstable; urgency=medium
+
+  * Support for: Firefox
+  * Support for: Chromium
+  * Support for: Vivaldi
+  * Support for: LibreWolf
+  * Support for: Google Chrome
+  * Support for: Brave
+  * Support for: Thunderbird
+  * Full rewrite
+
+ -- Actionschnitzel <actionschnitzel@guideos.de>  Fri, 29 Aug 2025 16:10:14 -0400
+
 guideos-browser-mail-backup (0.0.4) unstable; urgency=medium
 
   * Changed Icons

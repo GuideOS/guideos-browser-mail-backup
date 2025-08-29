@@ -1,16 +1,25 @@
 #!/bin/bash
 
-# ----------------------------------------------------------------------------
-# ⚠️ Hinweis für Entwickler:
-# 
-# Das Backup-Tool wurde von evilware666 für GuideOS entwickelt 
-# und ist Open Source. 
-# Mehr Infos zu GuideOS findet man unter: https://guideos.de/
 #
-# Dieses Skript dient dazu, das Profil eines Benutzers von verschiedenen Browsern
-# wie Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird
-# zu sichern und bei Bedarf wiederherzustellen. Es kann optional verschlüsselt werden.
-# ----------------------------------------------------------------------------
+# =============================================================================================================
+# Titel       : Browser & Mail Backup-Tool
+# Autor       : evilware666
+# Datum       : 2025-08-29
+# Beschreibung: Dieses Tool ermöglicht das Sichern und Wiederherstellen von Profil-Ordnern 
+#               für Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird. 
+#               Optional können Backups per GnuPG verschlüsselt werden.
+# Sprache     : Bash
+# Version     : 1.1
+# Lizenz      : Open Source (MIT)
+#
+# Hinweise    : 
+#   - Alle betreffenden Programme müssen geschlossen sein, bevor eine Sicherung oder Wiederherstellung erfolgt.
+#   - Bei der Wiederherstellung werden bestehende Profil-Ordner ggf. überschrieben.
+#   - Verschlüsselte Backups werden mit GPG symmetrisch gesichert.
+#
+# Projektseite: https://guideos.de/
+# =============================================================================================================
+
 
 # ⚠️ Hinweis zu Beginn des Tools
 zenity --info --text="                 Willkommen zum Browser und Mail Backup-Tool\n\nMit diesem Tool kannst du die Profil-Ordner von Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird sichern und bei Bedarf wiederherstellen. Die Sicherung kann optional verschlüsselt werden, um deine Daten zu schützen." --title="Browser-Backup-Tool"
@@ -23,7 +32,7 @@ ACTION=$(zenity --list --title="Browser und Mail Backup-Tool" --radiolist \
     --column="Wählen" --column="Aktion" \
     TRUE "Sichern" \
     FALSE "Wiederherstellen" \
-    --height=250 --width=400)
+    --height=300 --width=400)
 
 if [ $? -ne 0 ]; then
     exit 0
@@ -37,7 +46,7 @@ if [ "$ACTION" == "Sichern" ]; then
         --column="Auswahl" --column="Option" \
         TRUE "Ja" \
         FALSE "Nein" \
-        --height=250 --width=400)
+        --height=300 --width=400)
 
     if [ "$ENCRYPTION_OPTION" == "Ja" ]; then
         USE_ENCRYPTION=true
@@ -58,7 +67,7 @@ while true; do
             FALSE "Google Chrome" \
             FALSE "Brave" \
             FALSE "Thunderbird" \
-            --height=350 --width=500)
+            --height=450 --width=500)
         
         if [ $? -ne 0 ]; then
             exit 0
@@ -78,7 +87,7 @@ while true; do
             FALSE "Google Chrome" \
             FALSE "Brave" \
             FALSE "Thunderbird" \
-            --height=350 --width=500)
+            --height=450 --width=500)
     fi
 
     if [ $? -ne 0 ]; then
