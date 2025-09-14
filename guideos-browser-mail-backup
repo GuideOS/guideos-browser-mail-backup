@@ -9,7 +9,7 @@
 #               für Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird. 
 #               Optional können Backups per GnuPG verschlüsselt werden.
 # Sprache     : Bash
-# Version     : 1.1
+# Version     : 1.2
 # Lizenz      : Open Source (MIT)
 #
 # Hinweise    : 
@@ -20,6 +20,9 @@
 # Projektseite: https://guideos.de/
 # =============================================================================================================
 
+# System-Theme übernehmen
+GTK_THEME=$(gsettings get org.cinnamon.desktop.interface gtk-theme | tr -d "'")
+export GTK_THEME
 
 # ⚠️ Hinweis zu Beginn des Tools
 zenity --info --text="                 Willkommen zum Browser und Mail Backup-Tool\n\nMit diesem Tool kannst du die Profil-Ordner von Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird sichern und bei Bedarf wiederherstellen. Die Sicherung kann optional verschlüsselt werden, um deine Daten zu schützen." --title="Browser-Backup-Tool"

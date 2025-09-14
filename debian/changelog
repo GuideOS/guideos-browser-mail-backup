@@ -1,3 +1,9 @@
+guideos-browser-mail-backup (1.2) unstable; urgency=medium
+
+  * Fixed: Theming
+
+ -- Actionschnitzel <actionschnitzel@guideos.de>  Sun, 14 Sep 2025 13:44:31 +0200
+
 guideos-browser-mail-backup (1.1) unstable; urgency=medium
 
   * Support for: Firefox
