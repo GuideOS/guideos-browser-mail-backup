@@ -1,36 +1,58 @@
 #!/bin/bash
 
-#
 # =============================================================================================================
 # Titel       : Browser & Mail Backup-Tool
-# Autor       : evilware666
-# Datum       : 2025-08-29
+# Autor       : evilware666 (angepasst)
+# Datum       : 2025-08-29 (angepasst)
 # Beschreibung: Dieses Tool ermöglicht das Sichern und Wiederherstellen von Profil-Ordnern 
 #               für Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird. 
 #               Optional können Backups per GnuPG verschlüsselt werden.
+#               Verbesserte Snap-Wildcard-Suche und robusteres Wiederherstellen (keine UID/GID-Übernahme).
 # Sprache     : Bash
-# Version     : 1.2
+# Version     : 1.3
 # Lizenz      : Open Source (MIT)
-#
-# Hinweise    : 
-#   - Alle betreffenden Programme müssen geschlossen sein, bevor eine Sicherung oder Wiederherstellung erfolgt.
-#   - Bei der Wiederherstellung werden bestehende Profil-Ordner ggf. überschrieben.
-#   - Verschlüsselte Backups werden mit GPG symmetrisch gesichert.
-#
 # Projektseite: https://guideos.de/
 # =============================================================================================================
 
-# System-Theme übernehmen
+set -euo pipefail
+
 GTK_THEME=$(gsettings get org.cinnamon.desktop.interface gtk-theme | tr -d "'")
 export GTK_THEME
 
-# ⚠️ Hinweis zu Beginn des Tools
-zenity --info --text="                 Willkommen zum Browser und Mail Backup-Tool\n\nMit diesem Tool kannst du die Profil-Ordner von Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird sichern und bei Bedarf wiederherstellen. Die Sicherung kann optional verschlüsselt werden, um deine Daten zu schützen." --title="Browser-Backup-Tool"
+# Robustere Globbing-Regeln für Snap-Wildcards
+shopt -s nullglob
 
-# ⚠️ Hinweis zu Beginn des Tools
+# Hilfsfunktion: Suche erstes existierendes Verzeichnis aus einer Liste von Mustern
+find_first_existing() {
+    for pattern in "$@"; do
+        for candidate in $pattern; do
+            if [ -d "$candidate" ]; then
+                printf '%s' "$candidate"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# GnuPG-Wrapper-Funktionen
+gpg_encrypt() {
+    local src="$1" dst="$2" recipient="$3" symmetric="$4"
+    if [ "$symmetric" = "yes" ]; then
+        gpg --batch --yes --symmetric --cipher-algo AES256 --output "$dst" "$src"
+    else
+        gpg --batch --yes --output "$dst" --encrypt --recipient "$recipient" "$src"
+    fi
+}
+
+gpg_decrypt() {
+    local src="$1" dst="$2"
+    gpg --batch --yes --output "$dst" --decrypt "$src"
+}
+
+zenity --info --text="Mit diesem Tool kannst du die Profil-Ordner von Firefox, Chromium, Vivaldi, LibreWolf, Google Chrome, Brave und Thunderbird sichern und bei Bedarf wiederherstellen. Es werden sowol das Debian-Format als auch Snap und Flatpak unterstützt. Die Sicherung kann optional verschlüsselt werden." --title="Browser-Backup-Tool"
 zenity --info --text="⚠️ ACHTUNG ⚠️ Alle betreffenden Programme MÜSSEN geschlossen sein, da es sonst zu Problemen bei der Sicherung/Wiederherstellung kommen kann!" --title="Browser und Mail Backup-Tool"
 
-# Auswahl der Aktion
 ACTION=$(zenity --list --title="Browser und Mail Backup-Tool" --radiolist \
     --column="Wählen" --column="Aktion" \
     TRUE "Sichern" \
@@ -41,7 +63,6 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# Verschlüsselungsauswahl nur bei "Sichern"
 USE_ENCRYPTION=false
 if [ "$ACTION" == "Sichern" ]; then
     ENCRYPTION_OPTION=$(zenity --list --radiolist --title="Verschlüsselung wählen" \
@@ -57,7 +78,6 @@ if [ "$ACTION" == "Sichern" ]; then
 fi
 
 while true; do
-    # Auswahl der Profile
     if [ "$ACTION" == "Wiederherstellen" ]; then
         PROFILE_SELECTION=$(zenity --list --radiolist \
             --title="Profil Auswahl" \
@@ -76,7 +96,6 @@ while true; do
             exit 0
         fi
 
-        # ACHTUNG Hinweis für bestehende Ordner
         zenity --warning --text="ACHTUNG: Beim Wiederherstellen werden eventuell bestehende Profil-Ordner überschrieben" --title="⚠️ Achtung ⚠️"
     else
         PROFILE_SELECTION=$(zenity --list --radiolist \
@@ -107,8 +126,8 @@ while true; do
     }
 
     stop_progress() {
-        if ps -p $PROGRESS_PID > /dev/null; then
-            kill $PROGRESS_PID
+        if [ -n "${PROGRESS_PID-}" ] && ps -p $PROGRESS_PID > /dev/null 2>&1; then
+            kill $PROGRESS_PID 2>/dev/null || true
         fi
     }
 
@@ -117,126 +136,297 @@ while true; do
         if [ -n "$BACKUP_DIR" ]; then
             show_progress
             DATE=$(date +%Y-%m-%d_%H-%M-%S)
-
-            # Da nur ein Profil ausgewählt werden kann, entfällt die Schleife
             PROFILE="$PROFILE_SELECTION"
             BACKUP_NAME="$BACKUP_DIR/${PROFILE}_backup_${DATE}.tar.gz"
-
             PROFILES=""
+
             if [ "$PROFILE" == "Firefox" ]; then
-                if [ -d "$HOME/.mozilla" ]; then
-                    PROFILES+=".mozilla "
+                CANDIDATE=$(find_first_existing "$HOME/.mozilla" "$HOME/snap/firefox/*/common/.mozilla" "$HOME/snap/firefox/common/.mozilla" "$HOME/.var/app/org.mozilla.firefox/.mozilla")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
                     zenity --error --text="⚠️ Das Firefox-Profil wurde nicht gefunden." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "Chromium" ]; then
-                if [ -d "$HOME/.config/chromium" ]; then
-                    PROFILES+=".config/chromium "
+                CANDIDATE=$(find_first_existing "$HOME/.config/chromium" "$HOME/snap/chromium/*/common/.config/chromium" "$HOME/snap/chromium/common/.config/chromium" "$HOME/.var/app/org.chromium.Chromium/.config/chromium")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
                     zenity --error --text="⚠️ Das Chromium-Profil wurde nicht gefunden." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "Vivaldi" ]; then
-                if [ -d "$HOME/.config/vivaldi" ]; then
-                    PROFILES+=".config/vivaldi "
+                CANDIDATE=$(find_first_existing "$HOME/.config/vivaldi" "$HOME/snap/vivaldi/*/common/.config/vivaldi" "$HOME/snap/vivaldi/common/.config/vivaldi" "$HOME/.var/app/com.vivaldi.Vivaldi/.config/vivaldi")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
                     zenity --error --text="⚠️ Das Vivaldi-Profil wurde nicht gefunden." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "LibreWolf" ]; then
-                if [ -d "$HOME/.librewolf" ]; then
-                    PROFILES+=".librewolf "
+                CANDIDATE=$(find_first_existing "$HOME/.librewolf" "$HOME/snap/librewolf/*/common/.librewolf" "$HOME/snap/librewolf/common/.librewolf" "$HOME/.var/app/io.gitlab.librewolf-community/.librewolf")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
-                    zenity --error --text="⚠️ Das LibreWolf-Profil wurde nicht gefunden." --title="Fehler"
+                    zenity --error --text="⚠️ Das LibreWolf-Profil wurde nicht gefunden (weder klassisch, Snap noch Flatpak)." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "Google Chrome" ]; then
-                if [ -d "$HOME/.config/google-chrome" ]; then
-                    PROFILES+=".config/google-chrome "
+                CANDIDATE=$(find_first_existing "$HOME/.config/google-chrome" "$HOME/snap/google-chrome/*/common/.config/google-chrome" "$HOME/snap/google-chrome/common/.config/google-chrome" "$HOME/.var/app/com.google.Chrome/.config/google-chrome")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
                     zenity --error --text="⚠️ Das Google Chrome-Profil wurde nicht gefunden." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "Brave" ]; then
-                if [ -d "$HOME/.config/BraveSoftware" ]; then
-                    PROFILES+=".config/BraveSoftware "
+                CANDIDATE=$(find_first_existing "$HOME/.config/BraveSoftware" "$HOME/snap/brave/*/common/.config/BraveSoftware" "$HOME/snap/brave/common/.config/BraveSoftware" "$HOME/.var/app/com.brave.Browser/.config/BraveSoftware")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
                     zenity --error --text="⚠️ Das Brave-Profil wurde nicht gefunden." --title="Fehler"
                     exit 1
                 fi
             fi
+
             if [ "$PROFILE" == "Thunderbird" ]; then
-                if [ -d "$HOME/.thunderbird" ]; then
-                    PROFILES+=".thunderbird "
+                CANDIDATE=$(find_first_existing "$HOME/.thunderbird" "$HOME/snap/thunderbird/*/common/.thunderbird" "$HOME/snap/thunderbird/common/.thunderbird" "$HOME/.var/app/org.mozilla.Thunderbird/.thunderbird")
+                if [ -n "$CANDIDATE" ]; then
+                    PROFILES+="${CANDIDATE#$HOME/} "
                 else
                     stop_progress
-                    zenity --error --text="⚠️ Das Thunderbird-Profil wurde nicht gefunden." --title="Fehler"
+                    zenity --error --text="⚠️ Das Thunderbird-Profil wurde nicht gefunden (weder klassisch, Snap noch Flatpak)." --title="Fehler"
                     exit 1
                 fi
             fi
 
-            tar -czf "$BACKUP_NAME" -C "$HOME" $PROFILES
-            if [ $? -eq 0 ]; then
-                if [ "$USE_ENCRYPTION" == "true" ]; then
-                    PASSWORD=$(zenity --password --title="Passwort für die Verschlüsselung eingeben")
-                    echo "$PASSWORD" | gpg --batch --yes --passphrase-fd 0 -c "$BACKUP_NAME"
-                    if [ $? -eq 0 ]; then
-                        rm -f "$BACKUP_NAME"
-                        BACKUP_NAME+=".gpg"
-                    else
-                        stop_progress
-                        zenity --error --text="⚠️ Fehler bei der Verschlüsselung." --title="Fehler"
-                        exit 1
-                    fi
-                fi
+            # Erstelle das tar.gz-Archiv
+            if [ -z "$PROFILES" ]; then
                 stop_progress
-                zenity --info --text="Das Profil wurde erfolgreich gesichert: $BACKUP_NAME" --title="Sicherung abgeschlossen"
-            else
-                stop_progress
-                zenity --error --text="⚠️ Fehler beim Sichern des Profils." --title="Fehler"
+                zenity --error --text="⚠️ Es wurden keine Profil-Ordner zur Sicherung gefunden." --title="Fehler"
                 exit 1
-            fi
-        else
-            zenity --error --text="⚠️ Kein Zielordner ausgewählt. Sicherung abgebrochen." --title="Fehler"
-            exit 1
-        fi
-    elif [ "$ACTION" == "Wiederherstellen" ]; then
-        BACKUP_FILE=$(zenity --file-selection --title="Backup auswählen")
-        if [ -f "$BACKUP_FILE" ]; then
-            show_progress
-            if [[ "$BACKUP_FILE" == *.gpg ]]; then
-                PASSWORD=$(zenity --password --title="Passwort für die Entschlüsselung eingeben")
-                echo "$PASSWORD" | gpg --batch --yes --passphrase-fd 0 -d "$BACKUP_FILE" > "${BACKUP_FILE%.gpg}"
-                BACKUP_FILE="${BACKUP_FILE%.gpg}"
             fi
 
-            tar -xzf "$BACKUP_FILE" -C "$HOME"
-            if [ $? -eq 0 ]; then
-                rm -f "$BACKUP_FILE"  # Sicherstellen, dass die entschlüsselte Datei gelöscht wird
+            # Wechsle in $HOME damit relative Pfade im Archiv korrekt sind
+            (cd "$HOME" && tar -czf "$BACKUP_NAME" $PROFILES) 2>/dev/null || {
                 stop_progress
-                zenity --info --text="Die Wiederherstellung war erfolgreich!" --title="Wiederherstellung abgeschlossen"
+                zenity --error --text="⚠️ Beim Erstellen des Archivs ist ein Fehler aufgetreten." --title="Fehler"
+                exit 1
+            }
+
+            # Verschlüsselung optional (Asymmetrisch oder Symmetrisch)
+            if [ "$USE_ENCRYPTION" = true ]; then
+                stop_progress
+                ENC_CHOICE=$(zenity --list --radiolist --title="Verschlüsselungsmodus" \
+                    --column="Auswahl" --column="Modus" \
+                    TRUE "Asymmetrisch (Empfänger)" \
+                    FALSE "Symmetrisch (Passphrase)" \
+                    --height=250 --width=400)
+
+                if [ "$ENC_CHOICE" = "Asymmetrisch (Empfänger)" ]; then
+                    RECIPIENT=$(zenity --entry --title="GnuPG Empfänger" --text="Gib den GnuPG-Empfänger (E-Mail oder Schlüssel-ID) ein:")
+                    if [ -z "$RECIPIENT" ]; then
+                        zenity --error --text="⚠️ Kein Empfänger angegeben. Archiv bleibt unverschlüsselt." --title="Hinweis"
+                        zenity --info --text="Backup gespeichert als:\n$BACKUP_NAME" --title="Erfolg"
+                    else
+                        show_progress
+                        GPG_NAME="${BACKUP_NAME}.gpg"
+                        if ! gpg_encrypt "$BACKUP_NAME" "$GPG_NAME" "$RECIPIENT" "no"; then
+                            stop_progress
+                            zenity --error --text="⚠️ Die Verschlüsselung ist fehlgeschlagen." --title="Fehler"
+                            exit 1
+                        fi
+                        rm -f "$BACKUP_NAME"
+                        stop_progress
+                        zenity --info --text="Backup erfolgreich verschlüsselt und gespeichert als:\n$GPG_NAME" --title="Erfolg"
+                    fi
+                else
+                    show_progress
+                    GPG_NAME="${BACKUP_NAME}.gpg"
+                    if ! gpg_encrypt "$BACKUP_NAME" "$GPG_NAME" "" "yes"; then
+                        stop_progress
+                        zenity --error --text="⚠️ Die symmetrische Verschlüsselung ist fehlgeschlagen." --title="Fehler"
+                        exit 1
+                    fi
+                    rm -f "$BACKUP_NAME"
+                    stop_progress
+                    zenity --info --text="Backup erfolgreich verschlüsselt (symmetrisch) und gespeichert als:\n$GPG_NAME" --title="Erfolg"
+                fi
             else
                 stop_progress
-                zenity --error --text="⚠️ Fehler bei der Wiederherstellung des Profils." --title="Fehler"
-                exit 1
+                zenity --info --text="Backup erfolgreich gespeichert als:\n$BACKUP_NAME" --title="Erfolg"
             fi
         else
-            zenity --error --text="⚠️ Die ausgewählte Sicherung konnte nicht gefunden werden." --title="Fehler"
+            zenity --error --text="⚠️ Kein Zielordner ausgewählt. Skript abgebrochen." --title="Fehler"
             exit 1
         fi
+    else
+        # Wiederherstellen
+        BACKUP_FILE=$(zenity --file-selection --title="Wähle die Backup-Datei zum Wiederherstellen" --file-filter="*.tar.gz *.gpg")
+        if [ $? -ne 0 ] || [ -z "$BACKUP_FILE" ]; then
+            exit 0
+        fi
+
+        TMP_DIR=$(mktemp -d)
+        CLEANUP() {
+            rm -rf "$TMP_DIR"
+        }
+        trap CLEANUP EXIT
+
+        if [[ "$BACKUP_FILE" == *.gpg ]]; then
+            show_progress
+            DECRYPTED="$TMP_DIR/decrypted_backup.tar.gz"
+            if ! gpg_decrypt "$BACKUP_FILE" "$DECRYPTED"; then
+                stop_progress
+                zenity --error --text="⚠️ Entschlüsselung fehlgeschlagen. Abbruch." --title="Fehler"
+                exit 1
+            fi
+            if [ ! -s "$DECRYPTED" ]; then
+                stop_progress
+                zenity --error --text="⚠️ Entschlüsselung ergab eine leere Datei. Abbruch." --title="Fehler"
+                exit 1
+            fi
+            stop_progress
+            ARCHIVE="$DECRYPTED"
+        else
+            ARCHIVE="$BACKUP_FILE"
+        fi
+
+        PROFILE="$PROFILE_SELECTION"
+
+        show_progress
+
+        case "$PROFILE" in
+            "Firefox")
+                CANDIDATE=$(find_first_existing "$HOME/.mozilla" "$HOME/snap/firefox/*/common/.mozilla" "$HOME/snap/firefox/common/.mozilla" "$HOME/.var/app/org.mozilla.firefox/.mozilla")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.mozilla}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".mozilla"
+                fi
+                ;;
+            "Chromium")
+                CANDIDATE=$(find_first_existing "$HOME/.config/chromium" "$HOME/snap/chromium/*/common/.config/chromium" "$HOME/snap/chromium/common/.config/chromium" "$HOME/.var/app/org.chromium.Chromium/.config/chromium")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.config/chromium}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".config/chromium"
+                fi
+                ;;
+            "Vivaldi")
+                CANDIDATE=$(find_first_existing "$HOME/.config/vivaldi" "$HOME/snap/vivaldi/*/common/.config/vivaldi" "$HOME/snap/vivaldi/common/.config/vivaldi" "$HOME/.var/app/com.vivaldi.Vivaldi/.config/vivaldi")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.config/vivaldi}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".config/vivaldi"
+                fi
+                ;;
+            "LibreWolf")
+                CANDIDATE=$(find_first_existing "$HOME/.librewolf" "$HOME/snap/librewolf/*/common/.librewolf" "$HOME/snap/librewolf/common/.librewolf" "$HOME/.var/app/io.gitlab.librewolf-community/.librewolf")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.librewolf}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".librewolf"
+                fi
+                ;;
+            "Google Chrome")
+                CANDIDATE=$(find_first_existing "$HOME/.config/google-chrome" "$HOME/snap/google-chrome/*/common/.config/google-chrome" "$HOME/snap/google-chrome/common/.config/google-chrome" "$HOME/.var/app/com.google.Chrome/.config/google-chrome")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.config/google-chrome}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".config/google-chrome"
+                fi
+                ;;
+            "Brave")
+                CANDIDATE=$(find_first_existing "$HOME/.config/BraveSoftware" "$HOME/snap/brave/*/common/.config/BraveSoftware" "$HOME/snap/brave/common/.config/BraveSoftware" "$HOME/.var/app/com.brave.Browser/.config/BraveSoftware")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.config/BraveSoftware}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".config/BraveSoftware"
+                fi
+                ;;
+            "Thunderbird")
+                CANDIDATE=$(find_first_existing "$HOME/.thunderbird" "$HOME/snap/thunderbird/*/common/.thunderbird" "$HOME/snap/thunderbird/common/.thunderbird" "$HOME/.var/app/org.mozilla.Thunderbird/.thunderbird")
+                if [ -n "$CANDIDATE" ]; then
+                    TARGET="${CANDIDATE%/.thunderbird}"
+                    RELPATH="${CANDIDATE#$HOME/}"
+                else
+                    TARGET="$HOME"
+                    RELPATH=".thunderbird"
+                fi
+                ;;
+            *)
+                stop_progress
+                zenity --error --text="⚠️ Unbekanntes Profil: $PROFILE" --title="Fehler"
+                exit 1
+                ;;
+        esac
+
+        # Sichere evtl. bestehende Zielordner
+        TARGET_BASENAME="${RELPATH##*/}"
+        if [ -e "$TARGET/$TARGET_BASENAME" ] || [ -e "$TARGET/$RELPATH" ]; then
+            BACKUP_OLD="$TARGET/${TARGET_BASENAME}_backup_before_restore_$(date +%Y%m%d%H%M%S)"
+            mv "$TARGET/$TARGET_BASENAME" "$BACKUP_OLD" 2>/dev/null || mv "$TARGET/$RELPATH" "$BACKUP_OLD" 2>/dev/null || {
+                stop_progress
+                zenity --error --text="⚠️ Fehler beim Sichern des bestehenden Profil-Ordners." --title="Fehler"
+                exit 1
+            }
+        fi
+
+        # Entpacken: keine Übernahme von UID/GID oder exakten Permission-Bits
+        if ! (cd "$TARGET" && tar --warning=no-unknown-keyword --no-same-owner --no-same-permissions -xzf "$ARCHIVE" 2>/dev/null); then
+            stop_progress
+            zenity --error --text="⚠️ Fehler beim Entpacken des Archivs." --title="Fehler"
+            exit 1
+        fi
+
+        # Nachsetzen von Besitz und Rechten für lokalen Nutzer (nur, wenn nicht root)
+        LOCAL_USER=$(id -un)
+        LOCAL_GROUP=$(id -gn)
+        if [ "$(id -u)" -ne 0 ]; then
+            # chown nur auf den wiederhergestellten Ordner anwenden
+            chown -R "$LOCAL_USER:$LOCAL_GROUP" "$TARGET/$TARGET_BASENAME" 2>/dev/null || true
+        fi
+
+        # Setze konservative Rechte: Verzeichnisse 750, Dateien 640
+        find "$TARGET/$TARGET_BASENAME" -type d -exec chmod 750 {} + 2>/dev/null || true
+        find "$TARGET/$TARGET_BASENAME" -type f -exec chmod 640 {} + 2>/dev/null || true
+
+        stop_progress
+        zenity --info --text="Wiederherstellung abgeschlossen. Stelle sicher, dass die Programme korrekt geschlossen sind und starte sie neu." --title="Erfolg"
     fi
+
+    # Nach einem Durchlauf beenden
     break
 done
 
+exit 0
